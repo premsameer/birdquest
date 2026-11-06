@@ -17,3 +17,5 @@ dist/vendor/
 !.env.example
 __pycache__/
 .venv/
+
+android/app/google-services.json
