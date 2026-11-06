@@ -12,7 +12,7 @@ PROJECT = os.environ['GOOGLE_CLOUD_PROJECT']
 UPSTREAM = os.environ['RECOGNITION_URL'].rstrip('/')
 firebase_admin.initialize_app(options={'projectId': PROJECT})
 app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=['https://appassets.androidplatform.net'], allow_methods=['POST'], allow_headers=['Authorization','Content-Type'])
+app.add_middleware(CORSMiddleware, allow_origins=['https://appassets.androidplatform.net'], allow_methods=['POST'], allow_headers=['Authorization','Content-Type','X-Pairing-Key'])
 LIMIT = 6 * 1024 * 1024
 
 @app.get('/health')
@@ -54,3 +54,60 @@ async def identify(request: Request):
         return result.json()
     except ValueError:
         raise HTTPException(502,'Recognition returned an invalid response.')
+
+# Ephemeral pairing: secrets are random, expire in five minutes, and are single-use.
+import secrets
+import time
+from fastapi.responses import FileResponse
+from threading import Lock
+sessions = {}
+session_lock = Lock()
+
+@app.get('/login')
+def login():
+    return FileResponse('login.html',headers={'Cache-Control':'no-store','Referrer-Policy':'no-referrer'})
+
+@app.post('/session')
+def create_session():
+    with session_lock:
+        now=time.monotonic()
+        for key in list(sessions):
+            if sessions[key]['expires']<now: del sessions[key]
+        if len(sessions)>=100: raise HTTPException(429,'Try again later.')
+        key=secrets.token_urlsafe(32)
+        sessions[key]={'expires':now+300,'token':None}
+        return {'session':key}
+
+def pairing_key(request):
+    key=request.headers.get('X-Pairing-Key','')
+    if len(key)<40: raise HTTPException(401,'Invalid pairing session.')
+    return key
+
+@app.post('/session/complete')
+async def complete_session(request: Request):
+    key=pairing_key(request)
+    bearer=request.headers.get('Authorization','')
+    if not bearer.startswith('Bearer '): raise HTTPException(401,'Sign in first.')
+    token=bearer[7:]
+    try: claims=await run_in_threadpool(auth.verify_id_token,token)
+    except Exception: raise HTTPException(401,'Invalid sign-in.')
+    allowed={e.strip().lower() for e in os.environ.get('ALLOWED_EMAILS','').split(',')}
+    if not claims.get('email_verified') or claims.get('email','').lower() not in allowed or claims.get('firebase',{}).get('sign_in_provider')!='google.com':
+        raise HTTPException(403,'Use your enabled test account.')
+    with session_lock:
+        entry=sessions.get(key)
+        if not entry or entry['expires']<time.monotonic(): raise HTTPException(410,'Session expired. Restart sign-in in the app.')
+        if entry['token']: raise HTTPException(409,'Already completed.')
+        entry['token']=token
+    return {'status':'complete'}
+
+@app.post('/session/poll')
+def poll_session(request: Request):
+    key=pairing_key(request)
+    with session_lock:
+        entry=sessions.get(key)
+        if not entry or entry['expires']<time.monotonic(): raise HTTPException(410,'Sign-in expired. Try again.')
+        if not entry['token']: return {'status':'pending'}
+        token=entry['token'];del sessions[key]
+        from fastapi.responses import JSONResponse
+        return JSONResponse({'status':'complete','token':token},headers={'Cache-Control':'no-store'})
