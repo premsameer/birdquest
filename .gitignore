@@ -1,0 +1,19 @@
+# Local signing keys and build output
+*.keystore
+*.jks
+android/offline-build/
+android/.gradle/
+android/**/build/
+android/local.properties
+artifacts/
+download/
+# Regenerate pinned model assets with scripts/fetch-models.py
+dist/models/
+dist/vendor/
+# Local hosting identity and secrets
+.openai/
+.env
+.env.*
+!.env.example
+__pycache__/
+.venv/

@@ -1,0 +1,28 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'app.birdquest.mobile'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'app.birdquest.mobile'
+        minSdk 26
+        targetSdk 35
+        versionCode 3
+        versionName '0.1.2'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    sourceSets { main { assets.srcDir layout.buildDirectory.dir('generated/birdquestAssets') } }
+}
+
+tasks.register('syncWebAssets', Sync) {
+    from rootProject.file('../dist')
+    into layout.buildDirectory.dir('generated/birdquestAssets/www')
+}
+tasks.named('preBuild').configure { dependsOn 'syncWebAssets' }
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+}

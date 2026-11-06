@@ -1,0 +1,7 @@
+const {readFileSync,existsSync}=require('node:fs');const path=require('node:path');const crypto=require('node:crypto');const assert=require('node:assert/strict');
+const root=path.join(__dirname,'../dist'),manifest=JSON.parse(readFileSync(path.join(root,'model-assets.json')));
+for(const asset of manifest.assets){const bytes=readFileSync(path.join(root,asset.file));assert.equal(bytes.length,asset.bytes,asset.file);assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'),asset.sha256,asset.file)}
+for(const base of ['models/birdnet','models/birdnet/area-model']){const model=JSON.parse(readFileSync(path.join(root,base,'model.json')));for(const group of model.weightsManifest)for(const file of group.paths)assert.ok(existsSync(path.join(root,base,file)),file)}
+const labels=readFileSync(path.join(root,'models/birdnet/labels/en_us.txt'),'utf8').trim().split('\n');assert.ok(labels.length>6000);assert.ok(labels.some(l=>l.startsWith('Erithacus rubecula_')));
+const model=JSON.parse(readFileSync(path.join(root,'models/birdnet/model.json')));const layers=(model.modelTopology.model_config||model.modelTopology).config.layers;const output=layers.findLast(l=>l.config?.units);assert.equal(output.config.units,labels.length,'Label count must match acoustic model classes');
+console.log(`PASS: ${manifest.assets.length} asset hashes, all acoustic/geo weight shards, ${labels.length} labels match model output`);
